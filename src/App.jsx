@@ -1,3 +1,4 @@
+import AdminDashboard from "./components/AdminDashboard";
 import React, { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -19,7 +20,9 @@ import {
   deleteCafePhoto,
 } from "./services/photoService";
 import { saveReservation } from "./services/reservationService";
-import { openWhatsAppConfirmation } from "./utils/whatsapp";
+
+const WHATSAPP_API_URL =
+  import.meta.env.VITE_WHATSAPP_API_URL || "http://localhost:5001/send-whatsapp";
 
 const DEMO_MENU = [
   { id: "demo-1", name: "Signature Cappuccino", category: "Coffee", price: 149, desc: "Fresh espresso, silky foam, cinnamon dust.", available: true },
@@ -115,6 +118,24 @@ export default function App() {
     });
   }, [menuItems, category, queryText]);
 
+  async function sendWhatsAppAutomatically(bookingData) {
+    const response = await fetch(WHATSAPP_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(bookingData),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "WhatsApp auto-send failed");
+    }
+
+    return data;
+  }
+
   async function handleAdminLogin(event) {
     event.preventDefault();
 
@@ -138,18 +159,31 @@ export default function App() {
   async function handleReservation(event) {
     event.preventDefault();
 
-    if (reservation.phone.replace(/\D/g, "").length < 10) {
+    const cleanPhone = reservation.phone.replace(/\D/g, "");
+
+    if (cleanPhone.length < 10) {
       setNotice("Please enter WhatsApp number with country code, like 919876543210.");
       return;
     }
 
+    const bookingData = {
+      ...reservation,
+      phone: cleanPhone,
+    };
+
     try {
-      await saveReservation(reservation);
+      await saveReservation(bookingData);
     } catch (error) {
       console.warn("Reservation was not saved to Firebase. Check .env setup.", error);
     }
 
-    openWhatsAppConfirmation(reservation);
+    try {
+      await sendWhatsAppAutomatically(bookingData);
+      setNotice("Reservation confirmed. WhatsApp confirmation sent automatically.");
+    } catch (error) {
+      console.error(error);
+      setNotice("Reservation saved, but WhatsApp auto-message failed. Check backend/Twilio setup.");
+    }
 
     setReservation({
       name: "",
@@ -159,8 +193,6 @@ export default function App() {
       table: "Table for 2",
       note: "",
     });
-
-    setNotice("Reservation confirmed. WhatsApp confirmation opened.");
   }
 
   async function handleAddMenuItem(event) {
@@ -251,89 +283,54 @@ export default function App() {
       <header className="fixed left-0 right-0 top-0 z-50 border-b border-amber-200/70 bg-[#fff8ec]/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
           <a href="#home" className="flex items-center gap-3">
-            <span className="grid h-11 w-11 place-items-center rounded-full bg-[#0b3a78] text-xl text-white shadow-lg">
-              ☕
-            </span>
+            <span className="grid h-11 w-11 place-items-center rounded-full bg-[#0b3a78] text-xl text-white shadow-lg">☕</span>
             <span>
-              <strong className="block text-lg font-black leading-tight sm:text-xl">
-                Open Cafe
-              </strong>
-              <small className="hidden text-amber-800 sm:block">
-                Fresh Coffee • Snacks • Tables
-              </small>
+              <strong className="block text-lg font-black leading-tight sm:text-xl">Open Cafe</strong>
+              <small className="hidden text-amber-800 sm:block">Fresh Coffee • Snacks • Tables</small>
             </span>
           </a>
 
           <nav className="hidden items-center gap-7 text-sm font-bold md:flex">
             {navItems.map((item) => (
-              <a
-                key={item}
-                href={`#${item.toLowerCase()}`}
-                className="transition hover:text-[#0b3a78]"
-              >
+              <a key={item} href={`#${item.toLowerCase()}`} className="transition hover:text-[#0b3a78]">
                 {item}
               </a>
             ))}
           </nav>
 
           <div className="hidden items-center gap-3 sm:flex">
-            <a
-              href="#reserve"
-              className="rounded-full bg-[#0b3a78] px-5 py-3 text-sm font-black text-white shadow-lg transition hover:-translate-y-0.5"
-            >
+            <a href="#reserve" className="rounded-full bg-[#0b3a78] px-5 py-3 text-sm font-black text-white shadow-lg transition hover:-translate-y-0.5">
               Book Table
             </a>
 
             {adminUser ? (
-              <button
-                onClick={handleAdminLogout}
-                className="rounded-full bg-red-600 px-5 py-3 text-sm font-black text-white shadow-lg"
-              >
+              <button onClick={handleAdminLogout} className="rounded-full bg-red-600 px-5 py-3 text-sm font-black text-white shadow-lg">
                 Logout
               </button>
             ) : (
-              <button
-                onClick={() => setShowAdminLogin(true)}
-                className="rounded-full bg-[#26170f] px-5 py-3 text-sm font-black text-white shadow-lg"
-              >
+              <button onClick={() => setShowAdminLogin(true)} className="rounded-full bg-[#26170f] px-5 py-3 text-sm font-black text-white shadow-lg">
                 Admin
               </button>
             )}
           </div>
 
-          <button
-            onClick={() => setMobileMenu(!mobileMenu)}
-            className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-2xl md:hidden"
-          >
+          <button onClick={() => setMobileMenu(!mobileMenu)} className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-2xl md:hidden">
             {mobileMenu ? "×" : "☰"}
           </button>
         </div>
 
         <AnimatePresence>
           {mobileMenu && (
-            <motion.nav
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden border-t border-amber-200 bg-white md:hidden"
-            >
+            <motion.nav initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden border-t border-amber-200 bg-white md:hidden">
               <div className="grid gap-1 px-5 py-4">
                 {navItems.map((item) => (
-                  <a
-                    key={item}
-                    href={`#${item.toLowerCase()}`}
-                    onClick={() => setMobileMenu(false)}
-                    className="rounded-xl px-4 py-3 font-bold hover:bg-amber-50"
-                  >
+                  <a key={item} href={`#${item.toLowerCase()}`} onClick={() => setMobileMenu(false)} className="rounded-xl px-4 py-3 font-bold hover:bg-amber-50">
                     {item}
                   </a>
                 ))}
 
                 {adminUser ? (
-                  <button
-                    onClick={handleAdminLogout}
-                    className="rounded-xl bg-red-600 px-4 py-3 text-left font-bold text-white"
-                  >
+                  <button onClick={handleAdminLogout} className="rounded-xl bg-red-600 px-4 py-3 text-left font-bold text-white">
                     Logout Admin
                   </button>
                 ) : (
@@ -354,19 +351,9 @@ export default function App() {
       </header>
 
       <section id="home" className="relative overflow-hidden px-4 pt-28 sm:px-6 lg:px-8">
-        <div
-          className="absolute inset-0 opacity-20"
-          style={{
-            backgroundImage: "radial-gradient(#d99b2b 1px, transparent 1px)",
-            backgroundSize: "26px 26px",
-          }}
-        />
+        <div className="absolute inset-0 opacity-20" style={{ backgroundImage: "radial-gradient(#d99b2b 1px, transparent 1px)", backgroundSize: "26px 26px" }} />
         <div className="relative mx-auto grid max-w-7xl items-center gap-10 py-14 md:grid-cols-2 md:py-24">
-          <motion.div
-            initial={{ opacity: 0, y: 28 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7 }}
-          >
+          <motion.div initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7 }}>
             <span className="inline-flex rounded-full border border-pink-300 bg-pink-50 px-4 py-2 text-xs font-black text-pink-700 sm:text-sm">
               Premium cafe experience
             </span>
@@ -386,17 +373,8 @@ export default function App() {
             </div>
           </motion.div>
 
-          <motion.div
-            initial={{ opacity: 0, scale: 0.92 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.8 }}
-            className="relative"
-          >
-            <img
-              className="h-[330px] w-full rounded-[2rem] object-cover shadow-2xl sm:h-[440px] lg:h-[520px]"
-              src="https://images.unsplash.com/photo-1509042239860-f550ce710b93?q=80&w=1200&auto=format&fit=crop"
-              alt="Coffee served at Open Cafe"
-            />
+          <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.8 }} className="relative">
+            <img className="h-[330px] w-full rounded-[2rem] object-cover shadow-2xl sm:h-[440px] lg:h-[520px]" src="https://images.unsplash.com/photo-1509042239860-f550ce710b93?q=80&w=1200&auto=format&fit=crop" alt="Coffee served at Open Cafe" />
             <div className="absolute -bottom-5 left-5 rounded-2xl bg-pink-600 px-5 py-3 text-sm font-black text-white shadow-xl sm:left-8 sm:text-base">
               Made Fresh Daily
             </div>
@@ -423,19 +401,10 @@ export default function App() {
           <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
             <label className="flex items-center gap-2 rounded-2xl bg-white px-4 py-3 shadow-sm">
               <span>🔍</span>
-              <input
-                value={queryText}
-                onChange={(event) => setQueryText(event.target.value)}
-                placeholder="Search menu..."
-                className="w-full bg-transparent outline-none"
-              />
+              <input value={queryText} onChange={(event) => setQueryText(event.target.value)} placeholder="Search menu..." className="w-full bg-transparent outline-none" />
             </label>
 
-            <select
-              value={category}
-              onChange={(event) => setCategory(event.target.value)}
-              className="rounded-2xl bg-white px-4 py-3 shadow-sm outline-none"
-            >
+            <select value={category} onChange={(event) => setCategory(event.target.value)} className="rounded-2xl bg-white px-4 py-3 shadow-sm outline-none">
               {categories.map((item) => (
                 <option key={item}>{item}</option>
               ))}
@@ -445,28 +414,15 @@ export default function App() {
 
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {filteredMenu.map((item, index) => (
-            <motion.article
-              key={item.id}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: index * 0.04 }}
-              className={`rounded-3xl bg-white p-6 shadow-lg transition hover:-translate-y-2 ${
-                !item.available ? "opacity-50" : ""
-              }`}
-            >
+            <motion.article key={item.id} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: index * 0.04 }} className={`rounded-3xl bg-white p-6 shadow-lg transition hover:-translate-y-2 ${!item.available ? "opacity-50" : ""}`}>
               <div className="mb-4 flex items-center justify-between">
                 <span className="text-2xl">🍽️</span>
-                <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-black">
-                  ₹{item.price}
-                </span>
+                <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-black">₹{item.price}</span>
               </div>
               <h3 className="text-xl font-black">{item.name}</h3>
               <p className="mt-2 min-h-12 text-stone-600">{item.desc}</p>
               <div className="mt-5 flex items-center justify-between gap-3">
-                <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-black text-[#0b3a78]">
-                  {item.category}
-                </span>
+                <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-black text-[#0b3a78]">{item.category}</span>
                 <span className={`text-sm font-black ${item.available ? "text-green-700" : "text-red-700"}`}>
                   {item.available ? "Available" : "Unavailable"}
                 </span>
@@ -482,7 +438,7 @@ export default function App() {
             <span className="text-5xl">📅</span>
             <h2 className="mt-5 text-3xl font-black sm:text-5xl">Reserve Your Table</h2>
             <p className="mt-5 max-w-xl text-blue-100">
-              Choose table size, date and time. The reservation is saved in Firebase and WhatsApp confirmation opens instantly.
+              Choose table size, date and time. Your reservation is saved and the confirmation message is sent automatically through the backend WhatsApp service.
             </p>
           </div>
 
@@ -521,15 +477,7 @@ export default function App() {
         <h2 className="mb-8 text-3xl font-black sm:text-5xl">Latest Cafe Photos</h2>
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {photos.map((photo, index) => (
-            <motion.img
-              key={photo.id || index}
-              initial={{ opacity: 0, scale: 0.94 }}
-              whileInView={{ opacity: 1, scale: 1 }}
-              viewport={{ once: true }}
-              src={photo.url}
-              alt="Open Cafe gallery"
-              className="h-72 w-full rounded-3xl object-cover shadow-lg"
-            />
+            <motion.img key={photo.id || index} initial={{ opacity: 0, scale: 0.94 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} src={photo.url} alt="Open Cafe gallery" className="h-72 w-full rounded-3xl object-cover shadow-lg" />
           ))}
         </div>
       </section>
@@ -538,9 +486,7 @@ export default function App() {
         <div className="grid gap-8 rounded-[2rem] bg-white p-6 shadow-xl sm:p-10 lg:grid-cols-2">
           <div>
             <p className="font-black text-[#0b3a78]">About Us</p>
-            <h2 className="mt-2 text-3xl font-black sm:text-5xl">
-              A calm place for coffee, snacks and celebrations.
-            </h2>
+            <h2 className="mt-2 text-3xl font-black sm:text-5xl">A calm place for coffee, snacks and celebrations.</h2>
           </div>
           <p className="text-lg leading-8 text-stone-600">
             Open Cafe is built for daily coffee lovers, students, families and party reservations.
@@ -549,71 +495,21 @@ export default function App() {
       </section>
 
       {adminUser && (
-        <section id="admin" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-          <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-            <div>
-              <p className="font-black text-pink-600">Owner Area</p>
-              <h2 className="text-3xl font-black sm:text-5xl">Admin Update Panel</h2>
-            </div>
-            <button onClick={handleAdminLogout} className="rounded-2xl bg-red-600 px-6 py-3 font-black text-white">
-              Logout Admin
-            </button>
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-2">
-            <form onSubmit={handleAddMenuItem} className="grid gap-4 rounded-3xl bg-white p-6 shadow-lg">
-              <h3 className="text-2xl font-black">Add Menu Item</h3>
-              <input required placeholder="Item name" value={newItem.name} onChange={(e) => setNewItem({ ...newItem, name: e.target.value })} className="rounded-xl border p-3" />
-              <select value={newItem.category} onChange={(e) => setNewItem({ ...newItem, category: e.target.value })} className="rounded-xl border p-3">
-                <option>Coffee</option>
-                <option>Snacks</option>
-                <option>Desserts</option>
-                <option>Meals</option>
-                <option>Mocktails</option>
-              </select>
-              <input required placeholder="Price" type="number" value={newItem.price} onChange={(e) => setNewItem({ ...newItem, price: e.target.value })} className="rounded-xl border p-3" />
-              <textarea required placeholder="Description" value={newItem.desc} onChange={(e) => setNewItem({ ...newItem, desc: e.target.value })} className="rounded-xl border p-3" />
-              <button className="rounded-2xl bg-[#0b3a78] px-6 py-3 font-black text-white">
-                Add Menu Item
-              </button>
-
-              <div className="grid gap-2">
-                {menuItems.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border p-3">
-                    <span className="font-bold">{item.name}</span>
-                    <div className="flex gap-2">
-                      <button type="button" onClick={() => handleToggleAvailability(item)} className="rounded-lg bg-amber-100 px-3 py-1 text-sm font-bold">
-                        Toggle
-                      </button>
-                      <button type="button" onClick={() => handleDeleteMenuItem(item)} className="rounded-lg bg-red-100 px-3 py-1 text-sm font-bold text-red-700">
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </form>
-
-            <form onSubmit={handleAddPhoto} className="grid content-start gap-4 rounded-3xl bg-white p-6 shadow-lg">
-              <h3 className="text-2xl font-black">Add Cafe Photo</h3>
-              <input required placeholder="Paste image URL" value={newPhoto} onChange={(e) => setNewPhoto(e.target.value)} className="rounded-xl border p-3" />
-              <button className="rounded-2xl bg-pink-600 px-6 py-3 font-black text-white">
-                Add Photo
-              </button>
-
-              <div className="grid gap-2">
-                {photos.map((photo) => (
-                  <div key={photo.id} className="flex items-center justify-between gap-3 rounded-xl border p-3">
-                    <span className="truncate text-sm">{photo.url}</span>
-                    <button type="button" onClick={() => handleDeletePhoto(photo)} className="rounded-lg bg-red-100 px-3 py-1 text-sm font-bold text-red-700">
-                      Delete
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </form>
-          </div>
-        </section>
+        <AdminDashboard
+          menuItems={menuItems}
+          photos={photos}
+          newItem={newItem}
+          setNewItem={setNewItem}
+          newPhoto={newPhoto}
+          setNewPhoto={setNewPhoto}
+          handleAddMenuItem={handleAddMenuItem}
+          handleAddPhoto={handleAddPhoto}
+          handleDeleteMenuItem={handleDeleteMenuItem}
+          handleToggleAvailability={handleToggleAvailability}
+          handleDeletePhoto={handleDeletePhoto}
+          handleAdminLogout={handleAdminLogout}
+          setNotice={setNotice}
+        />
       )}
 
       <footer id="contact" className="bg-[#26170f] px-4 py-10 text-white sm:px-6 lg:px-8">
@@ -629,45 +525,17 @@ export default function App() {
 
       <AnimatePresence>
         {showAdminLogin && (
-          <motion.div
-            className="fixed inset-0 z-[100] grid place-items-center bg-black/50 px-4"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
+          <motion.div className="fixed inset-0 z-[100] grid place-items-center bg-black/50 px-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <form onSubmit={handleAdminLogin} className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
               <h2 className="text-2xl font-black">Admin Login</h2>
-              <p className="mt-2 text-sm text-stone-600">
-                Only the owner/admin can update menu and photos.
-              </p>
+              <p className="mt-2 text-sm text-stone-600">Only the owner/admin can update menu and photos.</p>
 
-              <input
-                required
-                type="email"
-                placeholder="Admin email"
-                value={adminEmail}
-                onChange={(e) => setAdminEmail(e.target.value)}
-                className="mt-5 w-full rounded-xl border p-3"
-              />
-
-              <input
-                required
-                type="password"
-                placeholder="Admin password"
-                value={adminPassword}
-                onChange={(e) => setAdminPassword(e.target.value)}
-                className="mt-3 w-full rounded-xl border p-3"
-              />
+              <input required type="email" placeholder="Admin email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} className="mt-5 w-full rounded-xl border p-3" />
+              <input required type="password" placeholder="Admin password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} className="mt-3 w-full rounded-xl border p-3" />
 
               <div className="mt-5 flex gap-3">
-                <button className="flex-1 rounded-2xl bg-[#0b3a78] px-5 py-3 font-black text-white">
-                  Login
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAdminLogin(false)}
-                  className="flex-1 rounded-2xl bg-stone-200 px-5 py-3 font-black"
-                >
+                <button className="flex-1 rounded-2xl bg-[#0b3a78] px-5 py-3 font-black text-white">Login</button>
+                <button type="button" onClick={() => setShowAdminLogin(false)} className="flex-1 rounded-2xl bg-stone-200 px-5 py-3 font-black">
                   Cancel
                 </button>
               </div>
@@ -676,13 +544,7 @@ export default function App() {
         )}
 
         {notice && (
-          <motion.button
-            onClick={() => setNotice("")}
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 30 }}
-            className="fixed bottom-5 left-1/2 z-50 w-[92%] max-w-md -translate-x-1/2 rounded-2xl bg-stone-950 px-5 py-4 text-center font-bold text-white shadow-2xl"
-          >
+          <motion.button onClick={() => setNotice("")} initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 30 }} className="fixed bottom-5 left-1/2 z-50 w-[92%] max-w-md -translate-x-1/2 rounded-2xl bg-stone-950 px-5 py-4 text-center font-bold text-white shadow-2xl">
             {notice}
           </motion.button>
         )}
