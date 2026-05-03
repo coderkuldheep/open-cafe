@@ -1,3 +1,4 @@
+import emailjs from "@emailjs/browser";
 import AdminDashboard from "./components/AdminDashboard";
 import React, { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -21,8 +22,9 @@ import {
 } from "./services/photoService";
 import { saveReservation } from "./services/reservationService";
 
-const WHATSAPP_API_URL =
-  import.meta.env.VITE_WHATSAPP_API_URL || "http://localhost:5001/send-whatsapp";
+const EMAILJS_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID;
+const EMAILJS_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_TEMPLATE_ID;
+const EMAILJS_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY;
 
 const DEMO_MENU = [
   { id: "demo-1", name: "Signature Cappuccino", category: "Coffee", price: 149, desc: "Fresh espresso, silky foam, cinnamon dust.", available: true },
@@ -55,6 +57,7 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [reservation, setReservation] = useState({
     name: "",
+    email: "",
     phone: "",
     date: "",
     time: "",
@@ -118,22 +121,22 @@ export default function App() {
     });
   }, [menuItems, category, queryText]);
 
-  async function sendWhatsAppAutomatically(bookingData) {
-    const response = await fetch(WHATSAPP_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+  async function sendEmailConfirmation(data) {
+    return emailjs.send(
+      EMAILJS_SERVICE_ID,
+      EMAILJS_TEMPLATE_ID,
+      {
+        name: data.name,
+        email: data.email,
+        phone: data.phone,
+        date: data.date,
+        time: data.time,
+        table: data.table,
+        note: data.note || "None",
+        to_email: data.email,
       },
-      body: JSON.stringify(bookingData),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok || !data.success) {
-      throw new Error(data.message || "WhatsApp auto-send failed");
-    }
-
-    return data;
+      EMAILJS_PUBLIC_KEY
+    );
   }
 
   async function handleAdminLogin(event) {
@@ -159,16 +162,14 @@ export default function App() {
   async function handleReservation(event) {
     event.preventDefault();
 
-    const cleanPhone = reservation.phone.replace(/\D/g, "");
-
-    if (cleanPhone.length < 10) {
-      setNotice("Please enter WhatsApp number with country code, like 919876543210.");
+    if (!reservation.email) {
+      setNotice("Please enter a valid email address.");
       return;
     }
 
     const bookingData = {
       ...reservation,
-      phone: cleanPhone,
+      phone: reservation.phone.replace(/\D/g, ""),
     };
 
     try {
@@ -178,15 +179,16 @@ export default function App() {
     }
 
     try {
-      await sendWhatsAppAutomatically(bookingData);
-      setNotice("Reservation confirmed. WhatsApp confirmation sent automatically.");
+      await sendEmailConfirmation(bookingData);
+      setNotice("Reservation confirmed. Email confirmation sent successfully.");
     } catch (error) {
       console.error(error);
-      setNotice("Reservation saved, but WhatsApp auto-message failed. Check backend/Twilio setup.");
+      setNotice("Reservation saved, but email failed. Check EmailJS setup.");
     }
 
     setReservation({
       name: "",
+      email: "",
       phone: "",
       date: "",
       time: "",
@@ -383,7 +385,7 @@ export default function App() {
       </section>
 
       <section className="mx-auto grid max-w-7xl gap-4 px-4 py-10 sm:px-6 md:grid-cols-4 lg:px-8">
-        {["Authentic Taste", "Fresh Daily", "Live Menu", "WhatsApp Booking"].map((item) => (
+        {["Authentic Taste", "Fresh Daily", "Live Menu", "Email Booking"].map((item) => (
           <div key={item} className="rounded-3xl border border-amber-200 bg-white/80 p-6 shadow-sm">
             <span className="text-2xl">★</span>
             <strong className="mt-2 block">{item}</strong>
@@ -438,15 +440,17 @@ export default function App() {
             <span className="text-5xl">📅</span>
             <h2 className="mt-5 text-3xl font-black sm:text-5xl">Reserve Your Table</h2>
             <p className="mt-5 max-w-xl text-blue-100">
-              Choose table size, date and time. Your reservation is saved and the confirmation message is sent automatically through the backend WhatsApp service.
+              Choose table size, date and time. Your reservation is saved and a confirmation email is sent automatically.
             </p>
           </div>
 
           <form onSubmit={handleReservation} className="grid gap-4 rounded-[2rem] bg-white p-5 text-stone-900 shadow-2xl sm:p-7">
             <div className="grid gap-4 sm:grid-cols-2">
               <input required placeholder="Your name" value={reservation.name} onChange={(e) => setReservation({ ...reservation, name: e.target.value })} className="rounded-xl border p-3 outline-[#0b3a78]" />
-              <input required placeholder="WhatsApp number e.g. 919876543210" value={reservation.phone} onChange={(e) => setReservation({ ...reservation, phone: e.target.value })} className="rounded-xl border p-3 outline-[#0b3a78]" />
+              <input required type="email" placeholder="Your email" value={reservation.email} onChange={(e) => setReservation({ ...reservation, email: e.target.value })} className="rounded-xl border p-3 outline-[#0b3a78]" />
             </div>
+
+            <input required placeholder="Phone number" value={reservation.phone} onChange={(e) => setReservation({ ...reservation, phone: e.target.value })} className="rounded-xl border p-3 outline-[#0b3a78]" />
 
             <div className="grid gap-4 sm:grid-cols-2">
               <input required type="date" value={reservation.date} onChange={(e) => setReservation({ ...reservation, date: e.target.value })} className="rounded-xl border p-3 outline-[#0b3a78]" />
